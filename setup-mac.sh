@@ -64,11 +64,14 @@ WIZARD_MODEL_NAME=anthropic/claude-sonnet-5
 # ===== Zep Cloud (Memory-Graph, Pflicht) - Key von https://app.getzep.com =====
 ZEP_API_KEY=HIER_ZEP_KEY_EINTRAGEN
 
-# ===== Zugriffsschutz (Login) - Passwort fuer den Login-Screen =====
-APP_PASSWORD=werwolf123#
+# ===== Zugriffsschutz (Login) - Pflicht, ohne diese Werte startet das Backend nicht =====
+# Beim Setup zufaellig erzeugt. Passwort fuer den Login-Screen:
+APP_PASSWORD=__APP_PASSWORD__
+# Signiert die Login-Tokens:
+SECRET_KEY=__SECRET_KEY__
 
-# ===== Admin (nur Inhaber) - schaltet die Abrechnung/Margen frei. BITTE aendern! =====
-ADMIN_PASSWORD=werwolf-admin#
+# ===== Admin (nur Inhaber) - schaltet die Abrechnung/Margen frei =====
+ADMIN_PASSWORD=__ADMIN_PASSWORD__
 
 # ===== Kosten-Deckel pro Run in EUR (0 = aus; im Admin zur Laufzeit aenderbar) =====
 MAX_COST_EUR=15
@@ -77,7 +80,13 @@ MAX_COST_EUR=15
 # Key erzeugen z. B. mit:  openssl rand -hex 24
 EXTERNAL_API_KEY=
 ENVEOF
-  echo "==> .env-Vorlage angelegt."
+  # Zufaellige Zugangswerte statt fester Standardpasswoerter
+  sed -i '' \
+    -e "s/__APP_PASSWORD__/$(openssl rand -hex 12)/" \
+    -e "s/__SECRET_KEY__/$(openssl rand -hex 32)/" \
+    -e "s/__ADMIN_PASSWORD__/$(openssl rand -hex 16)/" \
+    .env
+  echo "==> .env-Vorlage angelegt (Login-Passwort: APP_PASSWORD in der .env)."
 fi
 
 cat <<EOF

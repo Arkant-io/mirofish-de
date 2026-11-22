@@ -90,6 +90,20 @@ def create_app(config_class=Config):
         logger = get_logger('mirofish.request')
         logger.debug(f"响应: {response.status_code}")
         return response
+
+    # Tracebacks nie an den Client geben: viele Fehlerantworten enthalten ein
+    # Feld "traceback". Es wird hier zentral entfernt und nur ins Log geschrieben.
+    @app.after_request
+    def strip_traceback(response):
+        if not response.is_json or response.direct_passthrough:
+            return response
+        data = response.get_json(silent=True)
+        if isinstance(data, dict) and 'traceback' in data:
+            tb = data.pop('traceback')
+            get_logger('mirofish.request').error(
+                f"Fehler bei {request.method} {request.path}:\n{tb}")
+            response.set_data(app.json.dumps(data))
+        return response
     
     # 注册蓝图
     from .api import graph_bp, simulation_bp, report_bp, auth_bp, wizard_bp, share_bp, shared_bp, billing_bp, external_bp, groups_bp
@@ -154,12 +168,6 @@ def create_app(config_class=Config):
                                "Runs können unbegrenzt Kosten verursachen")
         except Exception as e:
             logger.warning(f"Modell-Wächter-Startcheck fehlgeschlagen: {e}")
-
-        # Standard-Passwörter aktiv? Deutlich machen.
-        if Config.APP_PASSWORD == 'werwolf123#':
-            logger.warning("Standard-APP_PASSWORD aktiv — bitte in .env ändern")
-        if Config.ADMIN_PASSWORD == 'werwolf-admin#':
-            logger.warning("Standard-ADMIN_PASSWORD aktiv — bitte in .env ändern")
 
         # Maschinen-API: Status loggen + verwaiste Runs bereinigen
         try:

@@ -638,7 +638,7 @@ def build_graph():
             except Exception as e:
                 # 更新项目状态为失败
                 build_logger.error(f"[{task_id}] 图谱构建失败: {str(e)}")
-                build_logger.debug(traceback.format_exc())
+                build_logger.error(traceback.format_exc())
                 
                 project.status = ProjectStatus.FAILED
                 project.error = str(e)
@@ -648,7 +648,7 @@ def build_graph():
                     task_id,
                     status=TaskStatus.FAILED,
                     message=t('progress.buildFailed', error=str(e)),
-                    error=traceback.format_exc()
+                    error=str(e)
                 )
         
         # 启动后台线程

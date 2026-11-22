@@ -14,10 +14,11 @@ brechen die Pipeline nie — Konkurrenzdaten sind Zusatzmaterial.
 
 import re
 import html
+import http.client
 import ipaddress
 import socket
+import ssl
 import urllib.parse
-import urllib.request
 import xml.etree.ElementTree as ET
 
 from ..utils.logger import get_logger
@@ -33,6 +34,8 @@ _MAX_COMPETITORS = 5
 _MAX_NEWS_PER_COMPETITOR = 5
 _MAX_SITE_CHARS = 6000
 _TIMEOUT = 12
+_MAX_REDIRECTS = 5
+_MAX_BYTES = 2 * 1024 * 1024
 
 
 def _strip_html(text: str) -> str:
@@ -43,31 +46,94 @@ def _strip_html(text: str) -> str:
     return re.sub(r'\s+', ' ', text).strip()
 
 
+def _is_public_ip(ip) -> bool:
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    return ip.is_global and not ip.is_multicast
+
+
+def _resolve_public_ip(host: str):
+    """Host auflösen; nur wenn ALLE Adressen öffentlich sind, eine davon liefern."""
+    if not host or '.' not in host or host.endswith('.local'):
+        return None
+    try:
+        infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+        ips = [ipaddress.ip_address(info[4][0].split('%')[0]) for info in infos]
+    except (OSError, ValueError):
+        return None
+    if not ips or not all(_is_public_ip(ip) for ip in ips):
+        return None
+    return str(ips[0])
+
+
 def _is_safe_public_url(url: str) -> bool:
     """SSRF-Schutz: nur http(s) auf öffentliche Hosts zulassen."""
     try:
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme not in ('http', 'https'):
             return False
-        host = parsed.hostname or ''
-        if not host or '.' not in host or host.endswith('.local'):
-            return False
-        # Alle aufgeloesten Adressen muessen oeffentlich sein
-        infos = socket.getaddrinfo(host, None)
-        for info in infos:
-            ip = ipaddress.ip_address(info[4][0])
-            if (ip.is_private or ip.is_loopback or ip.is_link_local
-                    or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
-                return False
-        return True
+        return _resolve_public_ip(parsed.hostname or '') is not None
     except Exception:
         return False
 
 
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    """Verbindet zur vorab geprüften IP statt neu aufzulösen (kein DNS-Rebinding)."""
+
+    def __init__(self, host, ip, **kwargs):
+        super().__init__(host, **kwargs)
+        self._pinned_ip = ip
+
+    def connect(self):
+        self.sock = socket.create_connection((self._pinned_ip, self.port), self.timeout)
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """Wie oben, TLS-Prüfung (SNI + Zertifikat) aber gegen den echten Hostnamen."""
+
+    def __init__(self, host, ip, **kwargs):
+        super().__init__(host, context=ssl.create_default_context(), **kwargs)
+        self._pinned_ip = ip
+
+    def connect(self):
+        sock = socket.create_connection((self._pinned_ip, self.port), self.timeout)
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+
+
 def _http_get(url: str) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
-    with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
-        return resp.read()
+    """GET mit SSRF-Schutz bei jedem Schritt.
+
+    Weiterleitungen werden selbst verfolgt: Jedes Ziel wird erneut geprüft, und
+    verbunden wird immer mit genau der geprüften IP.
+    """
+    for _ in range(_MAX_REDIRECTS + 1):
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in ('http', 'https'):
+            raise ValueError(f"Schema nicht erlaubt: {parsed.scheme}")
+        host = parsed.hostname or ''
+        ip = _resolve_public_ip(host)
+        if ip is None:
+            raise ValueError(f"Ziel nicht öffentlich: {host}")
+        conn_cls = _PinnedHTTPSConnection if parsed.scheme == 'https' else _PinnedHTTPConnection
+        conn = conn_cls(host, ip, port=parsed.port, timeout=_TIMEOUT)
+        try:
+            path = parsed.path or '/'
+            if parsed.query:
+                path += '?' + parsed.query
+            conn.request('GET', path, headers={"User-Agent": _USER_AGENT, "Accept-Encoding": "identity"})
+            resp = conn.getresponse()
+            if resp.status in (301, 302, 303, 307, 308):
+                location = resp.getheader('Location')
+                if not location:
+                    raise ValueError("Weiterleitung ohne Ziel")
+                url = urllib.parse.urljoin(url, location)
+                continue
+            if resp.status >= 400:
+                raise ValueError(f"HTTP {resp.status}")
+            return resp.read(_MAX_BYTES)
+        finally:
+            conn.close()
+    raise ValueError("Zu viele Weiterleitungen")
 
 
 def _looks_like_url(entry: str) -> bool:

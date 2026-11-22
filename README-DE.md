@@ -41,8 +41,9 @@ Markt aufbereitet:
   zusätzliches Seed-Material an die hochgeladenen Dokumente an. Standardmäßig **aus**.
 - **Co-Branding** Werwolf Media (Logo + Favicon).
 - **Zugriffsschutz (Login)** — vorgeschalteter Passwort-Login. Das Passwort wird
-  serverseitig geprüft (Token-basiert, API ist ohne Login gesperrt). Standardpasswort
-  `werwolf123#`, änderbar in der `.env` über `APP_PASSWORD`.
+  serverseitig geprüft (Token-basiert, API ist ohne Login gesperrt). Es gibt kein
+  Standardpasswort: `APP_PASSWORD`, `ADMIN_PASSWORD` und `SECRET_KEY` müssen in der
+  `.env` stehen, sonst startet das Backend nicht. `setup-mac.sh` erzeugt sie zufällig.
 
 Die Sprache lässt sich oben rechts jederzeit umstellen (Deutsch / English / 中文).
 
