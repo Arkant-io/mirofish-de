@@ -21,13 +21,18 @@ class Config:
     """Flask配置类"""
     
     # Flask配置
-    SECRET_KEY = os.environ.get('SECRET_KEY', 'mirofish-secret-key')
+    # Pflicht, kein Standardwert: ohne SECRET_KEY startet die App nicht (siehe validate()).
+    SECRET_KEY = os.environ.get('SECRET_KEY', '')
     DEBUG = os.environ.get('FLASK_DEBUG', 'True').lower() == 'true'
 
-    # Zugriffsschutz (Login). Passwort über .env (APP_PASSWORD) überschreibbar.
-    APP_PASSWORD = os.environ.get('APP_PASSWORD', 'werwolf123#')
-    # Admin-Passwort (nur Inhaber) – schaltet die Abrechnung/Margen frei. UNBEDINGT in .env ändern.
-    ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'werwolf-admin#')
+    # Zugriffsschutz (Login). Pflicht, kein Standardwert: APP_PASSWORD muss in .env stehen.
+    APP_PASSWORD = os.environ.get('APP_PASSWORD', '')
+    # Admin-Passwort (nur Inhaber) – schaltet die Abrechnung/Margen frei. Pflicht, kein Standardwert.
+    ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', '')
+
+    # Frühere Standardwerte aus dem (öffentlichen) Git-Verlauf. Gelten als verbrannt:
+    # Steht einer davon in der Umgebung, startet die App nicht.
+    BURNED_SECRETS = frozenset({'mirofish-secret-key', 'werwolf123#', 'werwolf-admin#'})
     
     # JSON配置 - 禁用ASCII转义，让中文直接显示（而不是 \uXXXX 格式）
     JSON_AS_ASCII = False
@@ -94,5 +99,13 @@ class Config:
             errors.append("LLM_API_KEY 未配置")
         if not cls.ZEP_API_KEY:
             errors.append("ZEP_API_KEY 未配置")
+        for name in ('SECRET_KEY', 'APP_PASSWORD', 'ADMIN_PASSWORD'):
+            value = getattr(cls, name)
+            if not value:
+                errors.append(f"{name} fehlt (Pflicht, es gibt keinen Standardwert)")
+            elif value in cls.BURNED_SECRETS:
+                errors.append(f"{name} nutzt einen öffentlich bekannten früheren Standardwert, bitte neu setzen")
+        if cls.APP_PASSWORD and cls.APP_PASSWORD == cls.ADMIN_PASSWORD:
+            errors.append("APP_PASSWORD und ADMIN_PASSWORD dürfen nicht gleich sein")
         return errors
 

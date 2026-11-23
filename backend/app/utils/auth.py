@@ -22,14 +22,15 @@ def expected_token() -> str:
 
 def check_password(password: str) -> bool:
     """Passwort konstant-zeitlich gegen das konfigurierte Passwort prüfen."""
-    if not isinstance(password, str):
+    # Ohne konfiguriertes Passwort nie einlassen (leer == leer wäre sonst ein Treffer)
+    if not isinstance(password, str) or not password or not Config.APP_PASSWORD:
         return False
-    return hmac.compare_digest(password, Config.APP_PASSWORD or "")
+    return hmac.compare_digest(password, Config.APP_PASSWORD)
 
 
 def check_token(token: str) -> bool:
     """Vom Client gesendetes Token validieren."""
-    if not isinstance(token, str) or not token:
+    if not isinstance(token, str) or not token or not Config.APP_PASSWORD or not Config.SECRET_KEY:
         return False
     return hmac.compare_digest(token, expected_token())
 
@@ -42,12 +43,12 @@ def expected_admin_token() -> str:
 
 
 def check_admin_password(password: str) -> bool:
-    if not isinstance(password, str):
+    if not isinstance(password, str) or not password or not Config.ADMIN_PASSWORD:
         return False
-    return hmac.compare_digest(password, Config.ADMIN_PASSWORD or "")
+    return hmac.compare_digest(password, Config.ADMIN_PASSWORD)
 
 
 def check_admin_token(token: str) -> bool:
-    if not isinstance(token, str) or not token:
+    if not isinstance(token, str) or not token or not Config.ADMIN_PASSWORD or not Config.SECRET_KEY:
         return False
     return hmac.compare_digest(token, expected_admin_token())
